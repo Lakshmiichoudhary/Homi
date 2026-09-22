@@ -16,6 +16,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth, useSignUp } from "@clerk/expo";
 import Toast from "../components/common/toast";
+import {
+    validateConfirmPassword,
+    validateEmail,
+    validateName,
+    validatePassword,
+} from "../components/common/Validation";
 import appConfig from "../components/constants/appConfig";
 import colors from "../components/constants/colors";
 
@@ -39,27 +45,79 @@ export default function SignUp() {
   const isLoading = fetchStatus === "fetching";
 
   const onSignUpPress = async () => {
-    const { error } = await signUp.password({
-      emailAddress: email,
-      password,
-      firstName: name,
-    });
-    if (error) {
+    const nameResult = validateName(name);
+
+    if (!nameResult.valid) {
       setToast({
         type: "error",
-        message: JSON.stringify(error, null, 2),
+        message: nameResult.message!,
       });
-
-      console.error(JSON.stringify(error, null, 2));
       return;
     }
 
-    if (!error) await signUp.verifications.sendEmailCode();
+    const emailResult = validateEmail(email);
+
+    if (!emailResult.valid) {
+      setToast({
+        type: "error",
+        message: emailResult.message!,
+      });
+      return;
+    }
+
+    const passwordResult = validatePassword(password);
+
+    if (!passwordResult.valid) {
+      setToast({
+        type: "error",
+        message: passwordResult.message!,
+      });
+      return;
+    }
+
+    const confirmPasswordResult = validateConfirmPassword(
+      password,
+      confirmPassword,
+    );
+
+    if (!confirmPasswordResult.valid) {
+      setToast({
+        type: "error",
+        message: confirmPasswordResult.message!,
+      });
+      return;
+    }
+
+    try {
+      await signUp.create({
+        emailAddress: email.trim(),
+        password,
+        firstName: name.trim(),
+      });
+
+      await signUp.verifications.sendEmailCode();
+
+      setToast({
+        type: "success",
+        message: "Verification code sent to your email.",
+      });
+    } catch (error: any) {
+      console.error("Signup error:", JSON.stringify(error, null, 2));
+
+      const message =
+        error?.errors?.[0]?.longMessage ||
+        error?.errors?.[0]?.message ||
+        "Unable to create your account. Please try again.";
+
+      setToast({
+        type: "error",
+        message,
+      });
+    }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {errors && <Toast type={toast?.type} message={toast?.message} />}
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -80,6 +138,8 @@ export default function SignUp() {
               />
             </View>
           </View>
+
+          {errors && <Toast type={toast?.type} message={toast?.message} />}
 
           <View style={styles.headingContainer}>
             <Text style={styles.title}>Create an account</Text>
