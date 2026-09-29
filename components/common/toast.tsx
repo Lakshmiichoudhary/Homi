@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import colors from "../constants/colors";
 
@@ -8,6 +8,8 @@ type ToastType = "success" | "error" | "warning" | "info";
 type ToastProps = {
   message?: string;
   type?: ToastType;
+  duration?: number;
+  onHide?: () => void;
 };
 
 const toastConfig = {
@@ -36,7 +38,24 @@ const toastConfig = {
   },
 };
 
-export default function Toast({ message, type = "error" }: ToastProps) {
+export default function Toast({
+  message,
+  type = "error",
+  duration = 3000,
+  onHide,
+}: ToastProps) {
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      onHide?.();
+    }, duration);
+
+    return () => clearTimeout(timer);
+  }, [message, duration, onHide]);
+
   if (!message) {
     return null;
   }

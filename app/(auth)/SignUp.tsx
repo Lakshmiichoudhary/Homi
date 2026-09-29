@@ -1,120 +1,86 @@
+import Toast from "@/components/common/toast";
+import appConfig from "@/components/constants/appConfig";
+import colors from "@/components/constants/colors";
+import { useAuth, useSignUp } from "@clerk/expo";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useAuth, useSignUp } from "@clerk/expo";
-import Toast from "../components/common/toast";
-import {
-    validateConfirmPassword,
-    validateEmail,
-    validateName,
-    validatePassword,
-} from "../components/common/Validation";
-import appConfig from "../components/constants/appConfig";
-import colors from "../components/constants/colors";
+type ToastState = {
+  type: "success" | "error" | "warning" | "info";
+  message: string;
+} | null;
 
 export default function SignUp() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [toast, setToast] = useState<{
-    type: "success" | "error" | "warning" | "info";
-    message: string;
-  } | null>(null);
-
   const { signUp, errors, fetchStatus } = useSignUp();
   const { isSignedIn } = useAuth();
   const router = useRouter();
 
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [toast, setToast] = useState<ToastState>(null);
+
   const isLoading = fetchStatus === "fetching";
 
   const onSignUpPress = async () => {
-    const nameResult = validateName(name);
+    setToast(null);
 
-    if (!nameResult.valid) {
-      setToast({
-        type: "error",
-        message: nameResult.message!,
-      });
+    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
+      setToast({ type: "warning", message: "Please fill in all fields." });
+      return;
+    }
+    if (password !== confirmPassword) {
+      setToast({ type: "error", message: "Passwords do not match." });
       return;
     }
 
-    const emailResult = validateEmail(email);
+    const [firstName, ...rest] = name.trim().split(" ");
+    const lastName = rest.join(" ") || undefined;
 
-    if (!emailResult.valid) {
-      setToast({
-        type: "error",
-        message: emailResult.message!,
-      });
-      return;
-    }
-
-    const passwordResult = validatePassword(password);
-
-    if (!passwordResult.valid) {
-      setToast({
-        type: "error",
-        message: passwordResult.message!,
-      });
-      return;
-    }
-
-    const confirmPasswordResult = validateConfirmPassword(
+    const { error } = await signUp.password({
+      emailAddress: email.trim(),
       password,
-      confirmPassword,
-    );
+      firstName,
+      lastName,
+    });
 
-    if (!confirmPasswordResult.valid) {
+    if (error) {
+      console.error(JSON.stringify(error, null, 2));
+      setToast({ type: "error", message: error.message ?? "Sign up failed." });
+      return;
+    }
+
+    const { error: sendError } = await signUp.verifications.sendEmailCode();
+
+    if (sendError) {
+      console.error(JSON.stringify(sendError, null, 2));
       setToast({
         type: "error",
-        message: confirmPasswordResult.message!,
+        message: sendError.message ?? "Could not send verification code.",
       });
       return;
     }
 
-    try {
-      await signUp.create({
-        emailAddress: email.trim(),
-        password,
-        firstName: name.trim(),
-      });
-
-      await signUp.verifications.sendEmailCode();
-
-      setToast({
-        type: "success",
-        message: "Verification code sent to your email.",
-      });
-    } catch (error: any) {
-      console.error("Signup error:", JSON.stringify(error, null, 2));
-
-      const message =
-        error?.errors?.[0]?.longMessage ||
-        error?.errors?.[0]?.message ||
-        "Unable to create your account. Please try again.";
-
-      setToast({
-        type: "error",
-        message,
-      });
-    }
+    router.push("/verify-email");
   };
+
+  if (isSignedIn) return null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -125,9 +91,9 @@ export default function SignUp() {
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          automaticallyAdjustKeyboardInsets={true}
+          automaticallyAdjustKeyboardInsets
         >
           <View style={styles.logoContainer}>
             <View style={styles.logo}>
@@ -139,17 +105,16 @@ export default function SignUp() {
             </View>
           </View>
 
-          {errors && <Toast type={toast?.type} message={toast?.message} />}
+          {toast && <Toast type={toast.type} message={toast.message} />}
 
           <View style={styles.headingContainer}>
             <Text style={styles.title}>Create an account</Text>
-
             <Text style={styles.subtitle}>Sign up to get started</Text>
           </View>
 
+          {/* Name */}
           <View style={styles.fieldContainer}>
             <Text style={styles.label}>Full name</Text>
-
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
@@ -166,7 +131,6 @@ export default function SignUp() {
           {/* Email */}
           <View style={styles.fieldContainer}>
             <Text style={styles.label}>Email address</Text>
-
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
@@ -179,11 +143,16 @@ export default function SignUp() {
                 autoCorrect={false}
               />
             </View>
+            {errors.fields.emailAddress && (
+              <Text style={styles.fieldError}>
+                {errors.fields.emailAddress.message}
+              </Text>
+            )}
           </View>
 
+          {/* Password */}
           <View style={styles.fieldContainer}>
             <Text style={styles.label}>Password</Text>
-
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
@@ -194,7 +163,6 @@ export default function SignUp() {
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
               />
-
               <TouchableOpacity
                 onPress={() => setShowPassword(!showPassword)}
                 hitSlop={10}
@@ -206,11 +174,16 @@ export default function SignUp() {
                 />
               </TouchableOpacity>
             </View>
+            {errors.fields.password && (
+              <Text style={styles.fieldError}>
+                {errors.fields.password.message}
+              </Text>
+            )}
           </View>
 
+          {/* Confirm password */}
           <View style={styles.fieldContainer}>
             <Text style={styles.label}>Confirm password</Text>
-
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
@@ -221,7 +194,6 @@ export default function SignUp() {
                 secureTextEntry={!showConfirmPassword}
                 autoCapitalize="none"
               />
-
               <TouchableOpacity
                 onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                 hitSlop={10}
@@ -238,7 +210,7 @@ export default function SignUp() {
           <TouchableOpacity
             onPress={onSignUpPress}
             disabled={isLoading}
-            style={styles.signUpButton}
+            style={[styles.signUpButton, isLoading && { opacity: 0.7 }]}
             activeOpacity={0.8}
           >
             {isLoading ? (
@@ -250,15 +222,12 @@ export default function SignUp() {
 
           <View style={styles.dividerContainer}>
             <View style={styles.divider} />
-
             <Text style={styles.orText}>or</Text>
-
             <View style={styles.divider} />
           </View>
 
           <View style={styles.signInContainer}>
             <Text style={styles.signInText}>Already have an account?</Text>
-
             <Link href="/" asChild>
               <TouchableOpacity>
                 <Text style={styles.signInLink}>Sign In</Text>
@@ -272,28 +241,15 @@ export default function SignUp() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-
-  container: {
-    flex: 1,
-  },
-
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingVertical: 5,
     justifyContent: "center",
   },
-
-  logoContainer: {
-    alignItems: "center",
-    marginTop: 24,
-    marginBottom: 36,
-  },
-
+  logoContainer: { alignItems: "center", marginTop: 24, marginBottom: 36 },
   logo: {
     width: 76,
     height: 76,
@@ -301,123 +257,72 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-
     shadowColor: colors.primary,
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 8,
   },
-
-  headingContainer: {
-    marginBottom: 28,
-    alignItems: "center",
-  },
-
+  headingContainer: { marginBottom: 28, alignItems: "center" },
   title: {
     fontSize: 32,
     fontWeight: "700",
     color: colors.text,
     letterSpacing: -0.5,
   },
-
-  subtitle: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    marginTop: 8,
-  },
-
-  fieldContainer: {
-    marginBottom: 18,
-  },
-
+  subtitle: { fontSize: 16, color: colors.textSecondary, marginTop: 8 },
+  fieldContainer: { marginBottom: 18 },
   label: {
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
     marginBottom: 8,
   },
-
   inputContainer: {
     height: 56,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 16,
-
     flexDirection: "row",
     alignItems: "center",
-
     paddingHorizontal: 16,
   },
-
   input: {
     flex: 1,
     fontSize: 16,
     color: colors.text,
-
     paddingHorizontal: 0,
     paddingVertical: 0,
   },
-
+  fieldError: { color: "#EF4444", fontSize: 13, marginTop: 6 },
   signUpButton: {
     height: 56,
     borderRadius: 16,
     backgroundColor: colors.primary,
-
     alignItems: "center",
     justifyContent: "center",
-
     marginTop: 4,
-
     shadowColor: colors.primary,
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 5,
   },
-
-  signUpText: {
-    color: colors.white,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
+  signUpText: { color: colors.white, fontSize: 16, fontWeight: "700" },
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 28,
   },
-
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-
-  orText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-    color: colors.textMuted,
-  },
-
+  divider: { flex: 1, height: 1, backgroundColor: colors.border },
+  orText: { marginHorizontal: 16, fontSize: 14, color: colors.textMuted },
   signInContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
   },
-
-  signInText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-
+  signInText: { fontSize: 14, color: colors.textSecondary },
   signInLink: {
     fontSize: 14,
     fontWeight: "700",
